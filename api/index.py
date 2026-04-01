@@ -2,26 +2,42 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app) # อนุญาตให้ Roblox เข้าถึงได้
-msgs = []
+CORS(app)
 
-@app.route('/send', methods=['POST'])
-def send():
-    try:
-        data = request.json
-        if not data or 'u' not in data or 'm' not in data:
-            return jsonify({"s": False}), 400
-        if len(msgs) > 25: msgs.pop(0) # เก็บ 25 ข้อความล่าสุด
-        msgs.append({"u": data['u'], "m": data['m']})
-        return jsonify({"s": True})
-    except:
-        return jsonify({"s": False}), 500
-
-@app.route('/get', methods=['GET'])
-def get():
-    return jsonify(msgs)
+# ตัวแปรเก็บข้อความ (จะหายเมื่อ Vercel หลับ)
+messages_list = []
 
 @app.route('/')
 def home():
-    return "Global Chat API is Online!"
+    return "API is Online! Use /get to see messages."
+
+@app.route('/get', methods=['GET'])
+def get_messages():
+    return jsonify(messages_list)
+
+@app.route('/send', methods=['POST'])
+def send_message():
+    try:
+        # รับข้อมูล JSON จาก Roblox
+        data = request.get_json(force=True)
+        
+        if not data or 'u' not in data or 'm' not in data:
+            return jsonify({"error": "Invalid Data"}), 400
+            
+        # เก็บข้อความ (จำกัดไว้ 20 ข้อความ)
+        messages_list.append({
+            "u": str(data['u']),
+            "m": str(data['m'])
+        })
+        
+        if len(messages_list) > 20:
+            messages_list.pop(0)
+            
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ส่วนนี้สำคัญมากสำหรับ Vercel
+if __name__ == '__main__':
+    app.run(debug=True)
     
