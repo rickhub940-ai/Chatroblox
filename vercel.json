@@ -1,10 +1,10 @@
 {
   "functions": {
     "api/chat.py": {
-      "runtime": "python3.9"
+      "runtime": "@vercel/python@3.9.0"
     },
     "api/getkey.py": {
-      "runtime": "python3.9"
+      "runtime": "@vercel/python@3.9.0"
     }
   }
 }
