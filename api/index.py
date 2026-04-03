@@ -10,32 +10,31 @@ app = Flask(__name__)
 client = MongoClient(os.getenv("MONGO_URL"))
 db = client.ChatDatabase
 collection = db.messages
-online_collection = db.online_users # 🟢 Collection ใหม่สำหรับนับคนออนไลน์
+online_collection = db.online_users # สำหรับนับคนออนไลน์
 
-# --- ฟังก์ชันช่วยนับคนออนไลน์ (หัวใจหลัก) ---
+# --- ฟังก์ชันนับคนออนไลน์ (อัปเดตทุกครั้งที่มีการเรียก) ---
 def get_online_count():
     user_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    now = datetime.now()
+    now_utc = datetime.utcnow()
+    now_thailand = now_utc + timedelta(hours=7)
     
-    # 1. บันทึก/อัปเดตเวลาที่ IP นี้ส่งสัญญาณมา
+    # บันทึกเวลาล่าสุดของ IP นี้ (UTC+7)
     online_collection.update_one(
         {"ip": user_ip},
-        {"$set": {"last_seen": now}},
+        {"$set": {"last_seen": now_thailand}},
         upsert=True
     )
     
-    # 2. ลบคนที่ไม่ส่งสัญญาณมาเกิน 1 นาที (ถือว่าออฟไลน์)
-    threshold = now - timedelta(minutes=1)
+    # ถ้าใครไม่ส่งสัญญาณเกิน 10 วินาที ให้ถือว่าออฟไลน์ (เพื่อให้เลขขยับไวตามที่คุณต้องการ)
+    threshold = now_thailand - timedelta(seconds=10)
     online_collection.delete_many({"last_seen": {"$lt": threshold}})
     
-    # 3. นับจำนวน IP ที่เหลืออยู่
     return online_collection.count_documents({})
 
 @app.route('/')
 def home():
-    return "009.exe Global Chat System is Online!"
+    return "009.exe Global Chat Online (UTC+7)"
 
-# 🔥 ส่งข้อความ (เพิ่มการส่งค่า Online กลับไป)
 @app.route('/send', methods=['POST'])
 def send_message():
     data = request.json
@@ -43,12 +42,14 @@ def send_message():
     message = data.get('m')
     
     if username and message:
-        now = datetime.now()
+        now_utc = datetime.utcnow()
+        now_thailand = now_utc + timedelta(hours=7)
+
         new_msg = {
             "u": username,
             "m": message,
-            "time": now.strftime("%H:%M"),
-            "timestamp": now,
+            "time": now_thailand.strftime("%H:%M"),
+            "timestamp": now_thailand,
             "id": str(ObjectId())
         }
         collection.insert_one(new_msg)
@@ -63,20 +64,13 @@ def send_message():
         return jsonify({"status": "success", "online": get_online_count()}), 200
     return jsonify({"status": "error"}), 400
 
-# 🔥 ดึงข้อความ + จำนวนคนออนไลน์
 @app.route('/get', methods=['GET'])
 def get_messages():
-    online_count = get_online_count() # 🟢 เช็คคนออนไลน์ทุกครั้งที่มีการ Get
-    msgs = list(
-        collection.find(
-            {},
-            {"_id": 0, "u": 1, "m": 1, "time": 1, "id": 1}
-        ).sort("timestamp", 1)
-    )
-    # ส่งข้อมูลกลับไปแบบมีทั้ง Messages และ Online Count
-    return jsonify({"messages": msgs, "online": online_count})
+    online = get_online_count()
+    msgs = list(collection.find({}, {"_id": 0, "u": 1, "m": 1, "time": 1, "id": 1}).sort("timestamp", 1))
+    return jsonify({"messages": msgs, "online": online})
 
-# 🔥 Route พิเศษสำหรับส่ง Heartbeat อย่างเดียว (เพื่อให้ UI อัปเดตเลขคนตลอด)
+# 🔥 Route สำหรับ Heartbeat โดยเฉพาะ (รองรับการยิงทุก 1 วิ)
 @app.route('/heartbeat', methods=['POST'])
 def heartbeat():
     return jsonify({"online": get_online_count()}), 200
